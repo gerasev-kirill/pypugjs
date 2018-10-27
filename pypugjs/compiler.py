@@ -3,6 +3,15 @@ import os
 import six
 
 
+def to_safe_html_attr(value):
+    if len(value)<=2 or value.count('"') <= 2:
+        return value
+    value = str(value[1:-1])
+    return '"' + value.replace('&', '&amp;').replace('<', '&lt;') \
+            .replace('>', '&gt;').replace('"', '&quot;').replace("'", '&#39;') + '"'
+
+
+
 class Compiler(object):
     RE_INTERPOLATE = re.compile(r'(\\)?([#!]){(.*?)}')
     doctypes = {
@@ -410,6 +419,7 @@ class Compiler(object):
             self.buf.append(self.attributes(param_string))
 
     def visitAttributes(self, attrs):
+
         temp_attrs = []
         for attr in attrs:
             if (not self.useRuntime and not attr['name'] == 'class') or attr['static']:
@@ -419,7 +429,7 @@ class Compiler(object):
                 n, v = attr['name'], attr['val']
                 if isinstance(v, six.string_types):
                     if self.useRuntime or attr['static']:
-                        self.buf.append(' %s=%s' % (n, v))
+                        self.buf.append(' %s=%s' % (n, to_safe_html_attr(v)))
                     else:
                         self.buf.append(' %s="%s"' % (n, self.visitVar(v)))
                 elif v is True:

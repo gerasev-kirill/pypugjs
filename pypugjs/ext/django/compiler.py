@@ -1,3 +1,4 @@
+import os
 from django.conf import settings
 from django.utils.encoding import force_text as to_text
 from django.utils.translation import template
@@ -32,7 +33,17 @@ class Compiler(_Compiler):
     def __init__(self, node, **options):
         if settings.configured:
             options.update(getattr(settings, 'PYPUGJS', {}))
+        self.base_directory = options.get('base_directory', None)
         super(Compiler, self).__init__(node, **options)
+
+    def _getRealFilePath(self, path):
+        if os.path.exists(path):
+            return path
+        if not self.base_directory:
+            return None
+        path = os.path.join(self.base_directory, path)
+        if os.path.exists(path):
+            return path
 
     def visitCodeBlock(self, block):
         self.buffer('{%% block %s %%}' % block.name)
@@ -74,15 +85,41 @@ class Compiler(_Compiler):
                 if code_tag in self.auto_close_code:
                     self.buf.append('{%% end%s %%}' % code_tag)
 
+    def visitExtends(self, node):
+        path = self.format_path(node.path)
+        self.buffer('{%% extends "%s" %%}' % (path))
+        self.buffer('{% load pugjs %}')
+
+
+    def visitInclude(self, node):
+        path = self.format_path(node.path)
+        if os.path.splitext(path)[-1].lower() not in ['.pug', '.jade']:
+            rpath = self._getRealFilePath(path)
+            if rpath:
+                with open(rpath) as f:
+                    self.buffer(f.read())
+                return
+        self.buffer('{%% include "%s" %%}' % (path))
+
+
     def attributes(self, attrs):
         return "{%% __pypugjs_attrs %s %%}" % attrs
+
+    def compile(self):
+        compiled = super(Compiler, self).compile()
+        if "{% load pugjs %}" not in compiled:
+            compiled = "{% load pugjs %}" + compiled
+        return compiled
 
 
 def decorate_templatize(func):
     def templatize(src, origin=None, charset=None):
         src = to_text(src, charset or settings.FILE_CHARSET)
         if origin.endswith(".pug"):
-            html = process(src, compiler=Compiler)
+            html = process(
+                src, compiler=Compiler,
+                base_directory=os.path.basename(origin)
+            )
         else:
             html = src
         return func(html, origin)
